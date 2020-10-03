@@ -1,4 +1,4 @@
-#!usr/bin/env python3.4
+#usr/bin/env python3.4
 ## WordNote App                                                             ##
 ## Author: Joshua Andrews                                                   ##
 ## Distributed under GPL                                                    ##
@@ -11,6 +11,7 @@
 ##############################################################################
 ##                             VERSION  HISTORY                             ##
 ##############################################################################
+## 17/09/17 -:- Version 0.9.1 Finished -:- Tabbed mode menus completed.     ##
 ## 23/08/17 -:- Version 0.9.0 Finished -:- Can now switch between tabbed    ##
 ## and windowed modes.  Some menu items still need re-assigned to support   ##
 ## this functionality.                                                      ##
@@ -316,7 +317,7 @@ class FontDialogue():
         self.font_family_list.insert("end", "Verdana")
         self.font_family_list.insert("end", "Wingdings")
 
-        #Buttons
+        # Buttons
         self.ok_button = tk.Button(self.root, text="OK", width="6", \
         command=self.confirm)
         self.cancel_button = tk.Button(self.root, text="Cancel", \
@@ -1552,6 +1553,10 @@ class WN():
         self.root.bind_all("<Alt-KeyPress-F4>", "")
         self.root.bind_all("<Alt-KeyPress-F4>", self.close)
         self.root.bind_all("<F10>", "")
+        self.root.bind_all("<KeyPress-F6>", 
+                           lambda e:self.switch_window_mode("tabbed"))
+        self.root.bind_all("<KeyPress-F7>",
+                           lambda e:self.switch_window_mode("windowed"))
         self.root.bind("<KeyPress-F8>", 
                        lambda e:self.view_change("standard"))
         self.root.bind("<KeyPress-F9>", 
@@ -1627,14 +1632,15 @@ class WN():
         self.repack_queue[self.vertscroll_banner] = [None, {}]
         self.repack_queue[self.back_banner_canvas] = [True,
                               self.back_banner_canvas.pack_info()]
-        self._repack()
         try:
             if len(self.window_set) == 1:
                 for n in range(0, 116):
                     self.root.after(10, self.img_canvas.move('img', 0, -4))
-                    self.root.update()   
+                    self.root.update()
+                self._repack()
                 self.img_canvas.destroy()
             else:
+                self._repack()
                 self.img_canvas.destroy()
         except tk.TclError:
             raise LaunchFailureError(self)
@@ -1689,6 +1695,7 @@ class WN():
 
 
     def windowed_text_entry_keybinds(self, text_entry):
+        print("called windowed_text_entry_keybinds")
         text_entry.bind("<Control-KeyPress-w>", self.add_to_whiteboard)
         text_entry.bind("<Control-KeyPress-z>", self.undo)
         text_entry.bind("<Control-KeyPress-y>", self.redo)
@@ -1717,6 +1724,7 @@ class WN():
 
 
     def tabbed_text_entry_keybinds(self, tab):
+        print("called tabbed_text_entry_keybinds")
         text_entry = tab[0].winfo_children()[0]
         text_entry.bind("<Control-KeyPress-w>", self.add_to_whiteboard)
         text_entry.bind("<Control-KeyPress-z>", self.undo)
@@ -1726,17 +1734,17 @@ class WN():
         text_entry.bind("<Control-KeyPress-v>", self.paste)
         text_entry.bind("<Control-KeyPress-f>", self.find)
         text_entry.bind("<Control-KeyPress-r>", self.replace)
-        text_entry.bind("<Control-KeyPress-d>", self.duplicate)
+        text_entry.bind("<Control-KeyPress-d>", self.duplicate_tab)
         text_entry.bind("<Control-KeyPress-p>", self.print_file)
         text_entry.bind("<Control-KeyPress-m>", self.mainmenu)
         text_entry.bind("<Control-KeyPress-q>", self.close_tab)
-        text_entry.bind("<Control-Shift-KeyPress-Q>", self.close_others)
-        text_entry.bind("<KeyPress-F5>", self.reset)
+        text_entry.bind("<Control-Shift-KeyPress-Q>", self.close_other_tabs)
+        text_entry.bind("<KeyPress-F5>", self.reset_tab)
         text_entry.bind("<Control-KeyPress-a>", self.select_all)
         text_entry.bind("<Control-KeyPress-s>", self.save_file_tab)
         text_entry.bind("<Control-KeyPress-o>", self.open_file_tab)
         text_entry.bind("<Control-Shift-KeyPress-S>", self.save_file_as_tab)
-        text_entry.bind("<Control-Shift-KeyPress-O>", self.open_new)
+        text_entry.bind("<Control-Shift-KeyPress-O>", self.open_new_tab)
         text_entry.bind("<Control-KeyPress-n>", self.create_new_tab)
         text_entry.bind("<Control-KeyPress-l>", self.lock)
         text_entry.bind("<Enter>", self.update_geometry)
@@ -1756,6 +1764,13 @@ class WN():
     def reset(self, event=None):
      # Deletes all text, with no save prompt
         self.text_entry.delete(1.0, "end")
+        return None
+
+
+    def reset_tab(self, event=None):
+     # Deletes all text in the selected tab, with no save prompt
+        tab = self.get_active_tab()
+        tab[0].winfo_children()[0].delete(1.0, "end")
         return None
 
 
@@ -2417,6 +2432,10 @@ class WN():
         self.lock_screen.mainloop()
 
 
+    def lock_tab_mode(self, event=None):
+        return None
+
+
     def unlock(self, event=None, _external=False):
         """Unlock method associated with the Lock method"""
 
@@ -2595,7 +2614,7 @@ class WN():
 
 
     def duplicate_tab(self, event=None):
-        tab = get_active_tab()
+        tab = self.get_active_tab()
         if tab[8].endswith(".wnx"):
             root_node = ET.Element("file")
             data_node = ET.SubElement(root_node, "data")
@@ -3668,9 +3687,11 @@ class WN():
             if self.window_mode == "windowed":
                 self.window_mode = "tabbed"
                 self.tab_set = {}
-                new_tab_count = 0
+                untitled_tab_count = 0
+                global count
+                count = 0
                 for key, window in self.window_set.items():
-                    print(key, window.text_frame)
+                    print("window: ", key, window.text_frame)
                 for key, window in self.window_set.items():
                     if self.tab_set:
                         self.previous_tab = self.get_active_tab()
@@ -3681,18 +3702,22 @@ class WN():
                                              window.text_entry.tag_config(tag)]
                     if window.file_name is not "":
                         tab_name = window.file_name
+                        print(window.file_name, untitled_tab_count)
                     else:
-                        if new_tab_count == 0:
+                        if untitled_tab_count == 0:
                             tab_name = "Untitled"
                         else:
-                            tab_name = "Untitled(" + str(new_tab_count) + ")"
-                        new_tab_count += 1
+                            tab_name = "Untitled(" + str(untitled_tab_count) + ")"
+                        print(window.file_name, untitled_tab_count)
+                        untitled_tab_count += 1
                     new_tab = self.create_tab(text, 
                                               tags_to_push, 
                                               tab_name, 
                                               window
                                               )
                     self.tab_set[new_tab[12]] = new_tab
+                    for key, value in self.tab_set.items():
+                        print(key, self.tab_set[key][3])
                     for tab, widgets in self.tab_set.items():
                         self.tab_set[tab][3].config(relief="raised")
                     new_tab[3].config(relief="sunken")
@@ -3714,12 +3739,13 @@ class WN():
             if self.window_mode == "tabbed":
                 self.window_mode = "windowed"
                 self.window_set = {}
-                global count
                 count = 1
+                print(len(list(self.tab_set.keys())))
                 for key, tab in self.tab_set.items():
                     if tab[12] == self.count:
                         self.window_set[0] = self
                         self.active_text_frame = self.text_frame
+                        print("tab to window")
                         continue
                     else:
                         tab[4] = tab[1].get("1.0", "end")
@@ -3737,6 +3763,7 @@ class WN():
                                         master = self.master)
                         new_window.new_window_pos = tab[14]
                         new_window.view_change(tab[10])
+                        print("tab to window")
                 for key, tab in self.tab_set.copy().items():
                     if tab[12] == self.count:
                         for widget in tab[:4]:
@@ -3748,10 +3775,7 @@ class WN():
                 self.tab_set = {}
                 if self.tab_labels_frame.winfo_ismapped():
                     self.tab_labels_frame.pack_forget()
-                self.file_menu.entryconfigure(0,
-                                              label="New Window", 
-                                              accelerator="Ctrl+N", 
-                                              command=self.new)
+                self.switch_menus_to_window_mode()
                 self._repack()
                 self.active_text_frame.bind("<Control-KeyPress-n>", self.new)
                 self.windowed_text_entry_keybinds(self.text_entry)
@@ -3760,6 +3784,7 @@ class WN():
                 return None
 
     def create_tab(self, text, pushed_tags, tab_name, window):
+        global count
         if not self.active_text_frame:
             self.active_text_frame = self.text_frame
         self.active_text_frame.pack_forget()
@@ -3795,11 +3820,12 @@ class WN():
         new_tab.append(window.custom_fonts_dict) # tab[9]
         new_tab.append(window.text_colour_tags) # tab[10]
         new_tab.append(window.non_font_tags) # tab[11]
-        new_tab.append(window.count) # tab[12]
+        new_tab.append(count) # tab[12]
         new_tab.append(window.view_mode) # tab[13]
         new_tab.append(window.root.geometry()) # tab[14]
         self.active_text_frame.pack_forget()
         self.root.update()
+        count += 1
         for font in window.custom_fonts_dict:
             if font is "custom_font":
                 continue
@@ -3902,6 +3928,7 @@ class WN():
         new_tab[1].focus_force()
         self.root.update()
         self.tab_set[count] = new_tab
+        print(count, self.tab_set[count])
         for key, tab in self.tab_set.items():
             if key == count:
                 continue
@@ -3936,7 +3963,7 @@ class WN():
                                       command=self.lock_tab_mode)
         self.file_menu.entryconfigure(12,
                                       command=lambda:self.close_tab(
-                self.get_active_tab()))
+                tab=self.get_active_tab()))
         self.file_menu.entryconfigure(13,
                                       command=self.close_other_tabs)
         self.edit_menu.entryconfigure(12,
@@ -3946,11 +3973,41 @@ class WN():
 
 
     def switch_menus_to_window_mode(self):
+        # placeholder - currently not required as new instances
+        # are created instead of actually converting tabs to 
+        # windows
+        self.file_menu.entryconfigure(0,
+                                      label="New Window", 
+                                      accelerator="Ctrl+N", 
+                                      command=self.new)
+        self.file_menu.entryconfigure(1,
+                                      command=self.open_file)
+        self.file_menu.entryconfigure(2,
+                                      label="Open in new window",
+                                      command=self.open_new)
+        self.file_menu.entryconfigure(3,
+                                      label="Duplicate",
+                                      command=self.duplicate)
+        self.file_menu.entryconfigure(5,
+                                      command=self.save_file)
+        self.file_menu.entryconfigure(6,
+                                      command=self.save_file_as)
+        self.file_menu.entryconfigure(9,
+                                      label="Lock window",
+                                      command=self.lock)
+        self.file_menu.entryconfigure(12, command=lambda:self.close)
+        self.file_menu.entryconfigure(13,
+                                      command=self.close_others)
+        self.edit_menu.entryconfigure(12,
+                                      command=lambda:self.fix_text(
+                self.active_text_frame.winfo_children()[0]))
         return None
 
         
     def change_tab(self, event=None):
+        print(event.widget)
         for key, value in self.tab_set.items():
+            print(key, self.tab_set[key][3])
             if event.widget in self.tab_set[key]:
                 selected_tab = self.tab_set[key]
             else:
@@ -3997,6 +4054,7 @@ class WN():
                 
         
     def close_tab(self, event=None, tab=None):
+        invalid_previous_tab = False
         if tab is not None:
             tab_to_close = tab
         else:
@@ -4036,6 +4094,14 @@ class WN():
             return None
         else:
             return None    
+
+
+    def close_other_tabs(self, event=None):
+        tab_to_keep = self.get_active_tab()
+        for key, tab in self.tab_set.copy().items():
+            if tab is not tab_to_keep:
+                self.close_tab(tab=tab)
+        return None
             
             
     def tab_to_window_cleanup(self, tab, event=None):
@@ -4060,6 +4126,7 @@ class WN():
 ##                DEBUG function, used for various testing.                ##    
 #############################################################################
     def test(self, event=None):
+        print(event.widget)
         pass
 
 
