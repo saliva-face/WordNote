@@ -877,13 +877,20 @@ def _default(app, username, settings):
 def _external_unlock(Joshython_instance, WN_instance):
     """Unlock method associated with the Joshython class"""
 
+    entered_password = Joshython_instance.unlock_password_entry.get()
+    Joshython_instance.unlock_password_entry.delete(0, tk.END)
     user_password = jtlcd.lcd[Joshython_instance.username][0]
-    if jt._hashcheck(Joshython_instance.unlock_password_entry.get(), 
+    if jt._hashcheck(entered_password, 
                      1,
+                     Joshython_instance,
                      Joshython_instance.username) == user_password:
         jt.LOCKED = False
         Joshython_instance.unlock()
-        WN_instance.unlock(None, True)
+        if WN_instance.window_mode == "windowed":
+            WN_instance.unlock(None, True)
+        elif WN_instance.window_mode == "tabbed":
+            WN_instance.unlock_tab_mode(None, True)
+        WN_instance.master.root.iconify()
         return None
     else:
         tkmb.showinfo("Authentication Failure", "The password entered was "
@@ -2256,6 +2263,29 @@ class WN():
         return None
 
 
+    def print_file_tab(self, event=None):
+     # Prints the current text to the default printer.  Future updates 
+     # will allow for a printing options dialogue.  Tab mode.
+        default_printer = win32print.GetDefaultPrinter()
+        file_contents = bytes(self.active_text_frame.get(1.0, "end"), 
+                              "utf-8")
+        self.printer = win32print.OpenPrinter(default_printer)
+        print_job = win32print.StartDocPrinter(self.printer, 
+                                               1, 
+                                               (self.file_name, 
+                                                None, 
+                                                "RAW")
+                                                )
+        win32print.StartPagePrinter(self.printer)
+        win32print.WritePrinter(self.printer, bytes("\n", "utf-8"))
+        win32print.WritePrinter(self.printer, file_contents)
+        win32print.WritePrinter(self.printer, bytes("\f", "utf-8"))
+        win32print.EndPagePrinter(self.printer)
+        win32print.EndDocPrinter(self.printer)
+        win32print.ClosePrinter(self.printer)
+        return None
+
+
     def _update_repack_queue(self):
         try:
             for child in self.banner_frame_children:
@@ -2433,6 +2463,57 @@ class WN():
 
 
     def lock_tab_mode(self, event=None):
+         # Best way of doing this is probably either:
+         # disable the other tabs and do exactly what lock does with 
+         # the current one, OR
+         # create a new frame so that the tabs can remain active, but
+         # can't be seen or clicked on - saves everything breaking 
+         # when tabs are disabled/re-enabled, but might look weird
+         # Locks all tabs - requires the logged in user's 
+         # password to unlock.
+        jt.LOCKED = True
+        self.master.lock(self)
+        current_tab = self.get_active_tab()
+        current_tab[1].config(state="disabled")
+        for tab, tab_structure in self.tab_set.items():
+            tab_structure[1].config(state="disabled")
+            tab_structure[0].pack_forget()
+            tab_structure[3].bind("<Button-1>", "")
+        self.tab_labels_frame.pack_forget()
+        if self.repack_queue[self.vertscroll_banner][0]:
+            self.vertscroll_banner.pack_forget()
+        if self.repack_queue[self.back_banner_canvas][0]:
+            self.back_banner_canvas.pack_forget()
+            
+        self.lock_screen = tk.Frame(self.root)
+        
+        # Create the password request widgets.
+        self.password_request = tk.Label(self.lock_screen, 
+                                         text="Enter your password to "
+                                         "unlock the document: ")
+        self.unlock_password_entry = tk.Entry(self.lock_screen, 
+                                              width=15, 
+                                              show="*",
+                                              exportselection="False", 
+                                              justify="center")
+        self.unlock_button = tk.Button(self.lock_screen, 
+                                       text="Unlock", 
+                                       command=self.unlock_tab_mode)
+        
+        self.lock_screen.pack(fill="both", expand="1")
+        self.password_request.pack()
+        self.unlock_password_entry.pack()
+        self.unlock_button.pack()
+        
+        # Disable all non-unlock widgets, including menus and banners.
+        self.root.config(menu=self.dummy_menu)
+        self.root.bind("<Button-3>", "")
+        self.lock_screen.lift(aboveThis=None)
+        self.unlock_password_entry.bind("<Return>", self.unlock_tab_mode)
+        self.unlock_password_entry.focus_force()
+        
+        self.lock_screen.mainloop()
+        
         return None
 
 
@@ -2490,6 +2571,66 @@ class WN():
             return None
 
 
+    def unlock_tab_mode(self, event=None, _external=False):
+        """Unlock method associated with the Lock method, for tab mode"""
+
+        def unlock_tabs():
+            self.lock_screen.destroy()
+            try:
+                if self.repack_queue[self.vertscroll_banner][0]:
+                    self.vertscroll_banner.pack(side="right",
+                                                fill="y",
+                                                in_=self.root)
+                if self.repack_queue[self.back_banner_canvas][0]:
+                    self.back_banner_canvas.pack(anchor="n",
+                                                 side="right",
+                                                 fill="both",
+                                                 expand=1)
+                self.tab_labels_frame.pack(side="top", fill="x")
+                current_tab = self.get_active_tab()
+                for tab, tab_structure in self.tab_set.items():
+                    tab_structure[1].config(state="normal")
+                    tab_structure[0].pack(anchor="n", 
+                                          side="top", 
+                                          fill="both", 
+                                          expand=1)
+                    tab_structure[3].bind("<Button-1>", self.change_tab)
+                self.root.config(menu=self.menu_bar)
+                self.root.bind("<Button-3>", self.show_context_menu)
+                self._repack()
+                current_tab[1].config(state="normal")
+            except tk.TclError:
+                pass  # TODO: Create proper Exception for this.
+            else:
+                if self.master.locked_frame.winfo_manager():
+                    jt.LOCKED = False
+                    self.master.unlock()
+                    return None
+                else:
+                    return None
+        user_password = jtlcd.lcd[self.username][0]
+        if _external:
+            unlock_tabs()
+            return None
+        elif self.hashcheck(self.unlock_password_entry.get(), 
+                            jtlcd.lcd[self.username][1]) == user_password:
+            unlock_tabs()
+            return None
+        else:
+            tkmb.showinfo("Authentication Failure", "The password entered "
+                          "was not correct.  Feel free to try again.  "
+                          "Alternatively, you could try only accessing your "
+                          "own documents in future.")
+            with open("loglogginglogins.txt", "a+") as file:
+                file.write("File unlock failed for user: " + 
+                           self.username + 
+                           " : Password entered: " + 
+                           self.unlock_password_entry.get() + 
+                           "\n")        
+            self.unlock_password_entry.delete(0, "end")
+            return None
+
+
     def add_to_whiteboard(self, event=None):
      # Function controlling the key feature of the program - the 
      # Whiteboard.  This is similar to the Windows clipboard but can 
@@ -2499,6 +2640,31 @@ class WN():
         if self.text_entry.tag_ranges("sel"):
             new_wb_contents = str(self.text_entry.get("sel.first", 
                                                       "sel.last"))
+            if new_wb_contents not in self.whiteboard_contents:
+                self.whiteboard_contents.append(new_wb_contents)
+                new_item_index = self.whiteboard_contents.index\
+                                 (new_wb_contents)
+                self.whiteboard.add_command(\
+                    label=self.whiteboard_contents[new_item_index], 
+                    command=lambda:self.paste_from_whiteboard(\
+                    self.whiteboard_contents[new_item_index]))
+                self.root.update()
+                return None
+            else:
+                return None
+        else:
+            return None
+
+
+    def add_to_whiteboard_tab(self, event=None):
+     # Function controlling the key feature of the program - the 
+     # Whiteboard.  This is similar to the Windows clipboard but can 
+     # contain multiple items, each of which can be accessed separately
+     # as and when required.  Checks whether a new item is already in 
+     # the Whiteboard or not before addition.
+        if self.active_text_frame.tag_ranges("sel"):
+            new_wb_contents = str(self.active_text_frame.get("sel.first", 
+                                                             "sel.last"))
             if new_wb_contents not in self.whiteboard_contents:
                 self.whiteboard_contents.append(new_wb_contents)
                 new_item_index = self.whiteboard_contents.index\
@@ -2527,6 +2693,21 @@ class WN():
         else:
             self.text_entry.insert("insert", text)
             self.text_entry.delete("end-1c", "end")
+            return None
+
+
+    def paste_from_whiteboard_tab(self, text):
+     # Keybound function to paste the last item saved to the Whiteboard
+     # into the document at the cursor location,erasing any selected 
+     # text.
+        if self.active_text_frame.tag_ranges("sel"):
+            self.active_text_frame.delete("sel.first", "sel.last")
+            self.active_text_frame.insert("insert", text)
+            self.active_text_frame.delete("end-1c", "end")
+            return None
+        else:
+            self.active_text_frame.insert("insert", text)
+            self.active_text_frame.delete("end-1c", "end")
             return None
 
 
@@ -2702,7 +2883,17 @@ class WN():
             return 'break'
         else:
             self.text_entry.tag_add("sel", "1.0", "end-1c")
-        return None            
+        return None
+
+
+    def select_all_tab(self, event=None):
+     # Selects all text in the widget, highlighting it.
+        if event:
+            self.active_text_frame.tag_add("sel", "1.0", "end-1c")
+            return 'break'
+        else:
+            self.active_text_frame.tag_add("sel", "1.0", "end-1c")
+        return None
 
 
     def highlight(self, event=None, colour=None):
@@ -2727,6 +2918,32 @@ class WN():
                 self.text_entry.tag_ranges(hl_colour)
         finally:
             return None
+
+
+    def highlight_tab(self, event=None, colour=None):
+        if not colour:
+            colour = self.highlight_colour.get()
+        else:
+            self.highlight_colour.set(colour)
+            self.edit_banner_canvas.tag_raise(colour)
+            self.root.update()
+        hl_colour = self.highlight_colour.get()
+        try:
+            self.active_text_frame.tag_add(hl_colour, 
+                                           "sel.first", 
+                                           "sel.last")
+        except tk.TclError:
+            raise TextNotSelectedError("Select text to highlight first.")
+        else:
+            self.active_text_frame.tag_raise("sel")
+            self.active_text_frame.tag_remove("sel", "sel.first", "sel.last")
+            self.active_text_frame.tag_configure(hl_colour, 
+                                                 background=hl_colour)
+            self.root.update()
+            self.non_font_tags[hl_colour] = \
+                self.active_text_frame.tag_ranges(hl_colour)
+        finally:
+            return None
         
 
     def remove_highlight(self):
@@ -2736,6 +2953,20 @@ class WN():
                     self.text_entry.tag_remove(tag, "sel.first", "sel.last")
                 else:
                     self.text_entry.tag_remove(tag, "1.0", "end")
+            else:
+                continue
+        return None
+
+
+    def remove_highlight_tab(self):
+        for tag in self.active_text_frame.tag_names():
+            if tag in ["yellow", "orange", "green", "pink"]:
+                if self.active_text_frame.tag_ranges("sel"):
+                    self.active_text_frame.tag_remove(tag, 
+                                                      "sel.first", 
+                                                      "sel.last")
+                else:
+                    self.active_text_frame.tag_remove(tag, "1.0", "end")
             else:
                 continue
         return None
@@ -2752,6 +2983,19 @@ class WN():
                 return None
             else:
                 return self.text_colour_change(new_colour[1])
+
+
+    def change_text_colour_tab(self, event=None):
+        if event:
+            return self.text_colour_change_tab(self.text_colour)
+        else:
+            new_colour=tkcc.askcolor(self.text_colour,
+                                     title="Text Colour",
+                                     parent=self.root)
+            if new_colour is (None, None):
+                return None
+            else:
+                return self.text_colour_change_tab(new_colour[1])
 
 
     def text_colour_change(self, new_colour):
@@ -2774,6 +3018,27 @@ class WN():
                                             fill=self.text_colour)
         return None
 
+
+    def text_colour_change_tab(self, new_colour):
+        self.text_colour = new_colour
+        if self.active_text_frame.tag_ranges("sel"):
+            self.active_text_frame.tag_add(self.text_colour,
+                                           "sel.first",
+                                           "sel.last")
+            self.active_text_frame.tag_raise(self.text_colour)
+            self.active_text_frame.tag_config(self.text_colour,
+                                              foreground=self.text_colour)
+            self.text_colour_tags[self.text_colour] = \
+                self.active_text_frame.tag_ranges(self.text_colour)
+        else:
+            for key in self.text_colour_tags:
+                self.active_text_frame.tag_remove(key, "1.0", "end")
+            self.active_text_frame.config(foreground=self.text_colour)
+            self.text_colour_tags = {}
+        self.style_banner_canvas.itemconfig("text_colour",
+                                            fill=self.text_colour)
+        return None
+
     
     def copy(self, event=None):
      # Identical to Windows 'Copy' function - ensures identical function
@@ -2783,6 +3048,21 @@ class WN():
                 self.root.clipboard_clear()
                 self.root.clipboard_append(self.text_entry.get("sel.first", 
                                                                "sel.last"))
+                return "break"
+            except tk.TclError:
+                return None
+        else:
+            return None
+
+
+    def copy_tab(self, event=None):
+     # Identical to Windows 'Copy' function - ensures identical function
+     # cross-platform.
+        if self.active_text_frame.tag_ranges("sel"):
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(self.active_text_frame.get\
+                    ("sel.first", "sel.last"))
                 return "break"
             except tk.TclError:
                 return None
@@ -2800,10 +3080,30 @@ class WN():
             return "break"
 
 
+    def undo_tab(self, event=None):
+     # Provides event handling for 'undo' option in menus.
+        try:
+            self.active_text_frame.edit_undo()
+        except tk.TclError:
+            return None
+        else:
+            return "break"
+
+
     def redo(self, event=None):
      # Provides event handling for 'redo' option in menus.
         try:
             self.text_entry.edit_redo()
+        except tk.TclError:
+            return None
+        else:
+            return "break"
+
+
+    def redo_tab(self, event=None):
+     # Provides event handling for 'redo' option in menus.
+        try:
+            self.active_text_frame.edit_redo()
         except tk.TclError:
             return None
         else:
@@ -2819,6 +3119,23 @@ class WN():
                 self.root.clipboard_append(self.text_entry.get("sel.first", 
                                                                "sel.last"))
                 self.text_entry.delete("sel.first", "sel.last")
+            except tk.TclError:
+                return None
+            else:
+                return "break"
+        else:
+            return None
+
+
+    def cut_tab(self, event=None):
+     # Identical to Windows 'Cut' function - ensures identical function
+     # cross-platform.
+        if self.active_text_frame.tag_ranges("sel"):
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(self.active_text_frame.get\
+                    ("sel.first", "sel.last"))
+                self.active_text_frame.delete("sel.first", "sel.last")
             except tk.TclError:
                 return None
             else:
@@ -2847,6 +3164,26 @@ class WN():
             return None
 
 
+    def paste_tab(self, event=None):
+     # Identical to Windows 'Paste' function - ensures identical function
+     # cross-platform.
+        try:
+            if self.active_text_frame.tag_ranges("sel"):
+                self.active_text_frame.delete("sel.first", "sel.last")
+                self.active_text_frame.insert("insert", 
+                                              self.root.selection_get\
+                                              (selection="CLIPBOARD"))
+                return "break"
+            else:
+                self.active_text_frame.insert("insert", 
+                                              self.root.selection_get\
+                                              (selection="CLIPBOARD"))
+                self.active_text_frame.delete("end-1c", "end")
+                return "break"
+        except tk.TclError:
+            return None
+
+
     def mainmenu(self, event=None):
      # Returns to the Main Menu, closing all currently opened windows.
      # Restores the minimised launcher window.
@@ -2861,6 +3198,23 @@ class WN():
                 self.window_set[key].root.destroy()
             self.window_set = {}
             self.master.root.deiconify()
+            return True
+        else:
+            return False
+
+
+    def mainmenu_tab(self, event=None):
+     # Returns to the Main Menu, closing all currently opened windows.
+     # Restores the minimised launcher window.
+        if tkmb.askyesno("Warning!", 
+                         "If you continue, any unsaved changes to this or "
+                         "any other open WordNote window will be lost.  "
+                         "Please ensure you have saved any work which you "
+                         "wish to keep before continuing.  Would you like "
+                         "to continue closing all WordNote windows?", 
+                         icon="warning"):
+            self.master.root.deiconify()
+            self.root.destroy()
             return True
         else:
             return False
@@ -2950,6 +3304,31 @@ class WN():
             return None
 
 
+    def search_text_tab(self, search_text, search_index="1.0"):
+     # Searches for text from the text_search object, adding it to the 
+     # "sel" tag and re-focusing on the main window.  "Find" dialogue 
+     # remains open.
+        start = self.active_text_frame.search(search_text, 
+                                              search_index)
+        end = "".join([start, "+", str(len(search_text)), "c"])
+        self.active_text_frame.focus_force()
+        try:
+            self.active_text_frame.see(start)
+        except tk.TclError:
+            raise TextNotFoundError
+            self.find_dialogue.root.destroy()
+            self.find_dialogue = TextSearch(self)
+            self.find_dialogue.search_field.insert("end", search_text)
+        else:
+            self.active_text_frame.tag_remove("sel", 1.0, "end")
+            self.active_text_frame.tag_add("sel", start, end)
+            self.last_search_result = self.active_text_frame.tag_ranges\
+                ("sel")
+            return self.last_search_result
+        finally:
+            return None
+
+
     def replace(self, event=None):
      # Creates instance of 'Replace' dialogue
         self.replace_dialogue = TextReplace(self)
@@ -2975,7 +3354,7 @@ class WN():
                                                        replacement_text)
         else:
             if self.text_entry.tag_ranges("sel"):
-                self.text_entry.tag_remove("sel", 1.0, "end")
+                    self.text_entry.tag_remove("sel", 1.0, "end")
             self.text_entry.delete(search_start, search_end)
             self.text_entry.insert(search_start, replacement_text)
             replace_start = search_start
@@ -2989,10 +3368,56 @@ class WN():
             return self.last_replacement_text_result
         finally:
             return None
+
+
+    def replace_text_tab(self, 
+                         search_text, 
+                         replacement_text, 
+                         search_index="1.0"):
+     # Searches for text, and replaces with text, from the TextReplace 
+     # object, then re-focuses on the main window. "Find and Replace" 
+     # dialogue remains open.
+        search_start = self.active_text_frame.search(search_text, 
+                                                     search_index)
+        search_end = "".join([search_start, "+", str(len(search_text)), "c"])
+        self.active_text_frame.focus_force()
+        try:
+            self.active_text_frame.see(search_start)
+        except tk.TclError:
+            raise TextNotFoundError
+            self.replace_dialogue.root.destroy()
+            self.replace_dialogue = TextReplace(self)
+            self.replace_dialogue.search_field.insert("end", search_text)
+            self.replace_dialogue.replace_field.insert("end",
+                                                       replacement_text)
+        else:
+            if self.active_text_frame.tag_ranges("sel"):
+                self.active_text_frame.tag_remove("sel", 1.0, "end")
+            self.active_text_frame.delete(search_start, search_end)
+            self.active_text_frame.insert(search_start, replacement_text)
+            replace_start = search_start
+            replace_end = "".join([replace_start,
+                                   "+",
+                                   str(len(replacement_text)),
+                                   "c"])
+            self.active_text_frame.tag_add("sel", 
+                                           replace_start, 
+                                           replace_end)
+            self.last_search_result = self.active_text_frame.tag_ranges\
+                    ("sel")
+            self.last_replacement_text = replacement_text
+            return self.last_replacement_text_result
+        finally:
+            return None
             
 
     def font_size_change(self, new_size):
         self.font_change({"size" : new_size}, offset=None)
+        return None
+
+
+    def font_size_change_tab(self, new_size):
+        self.font_change_tab({"size" : new_size}, offset=None)
         return None
 
 
@@ -3088,6 +3513,121 @@ class WN():
                 elif offset == -20:
                     self.text_entry.tag_add("subscript", "end-1c", "end")
                     self.text_entry.tag_config("subscript", offset=offset)
+                else:
+                    return None
+            else:
+                return None
+
+
+    def font_change_tab(self, new_font, offset=None):
+        def change(font, new_font):
+            for key in new_font:
+                try:
+                    if key is "strikethrough_change":
+                        if new_font[key]:
+                            font["overstrike"] = new_font["overstrike"]
+                    elif key is "underline_change":
+                        if new_font[key]:
+                            font["underline"] = new_font["underline"]
+                    else:
+                        if new_font[key]:
+                            font[key] = new_font[key]
+                except KeyError:
+                    continue
+            else:
+                return font
+        if self.active_text_frame.tag_ranges("sel"):
+            sel_length = len(self.active_text_frame.get("sel.first", 
+                                                        "sel.last"))
+            for i in range(sel_length):
+                start_index = "sel.first+" + str(i) + "c"
+                stop_index = "sel.first+" + str(i+1) + "c"
+                for tag in self.active_text_frame.tag_names(start_index):
+                    if tag not in self.non_font_tags and tag not in \
+                            self.text_colour_tags:
+                        font = self.custom_fonts_dict[tag].copy()
+                        self.custom_fonts_dict[font.name] = font.copy()
+                        self.active_text_frame.tag_remove(tag,
+                                                          start_index,
+                                                          stop_index)
+                        self.active_text_frame.tag_add(font.name,
+                                                       start_index,
+                                                       stop_index)
+                        self.active_text_frame.tag_raise(font.name)
+                        changed_font = change(font, new_font)
+                        self.active_text_frame.tag_config(font.name, 
+                                                          font=changed_font)
+                        self.custom_fonts_dict[font.name] = \
+                                changed_font.copy()
+                        break
+                    else:
+                        continue
+                else:
+                    font = self.custom_fonts_dict["custom_font"].copy()
+                    self.custom_fonts_dict[font.name] = font.copy()
+                    self.active_text_frame.tag_add(font.name,
+                                                   start_index,
+                                                   stop_index)
+                    self.active_text_frame.tag_raise(font.name)
+                    changed_font = change(font, new_font)
+                    self.active_text_frame.tag_config(font.name,
+                                                      font=changed_font)
+                    self.custom_fonts_dict[font.name] = changed_font.copy()
+            if offset is not None:
+                self.active_text_frame.tag_remove("superscript",
+                                                  "sel.first",
+                                                  "sel.last")
+                self.active_text_frame.tag_remove("subscript",
+                                                  "sel.first",
+                                                  "sel.last")
+                if offset == 20:
+                    self.active_text_frame.tag_add("superscript",
+                                                   "sel.first",
+                                                   "sel.last")
+                    self.active_text_frame.tag_config("superscript", 
+                                                      offset=offset)
+                elif offset == -20:
+                    self.active_text_frame.tag_add("subscript",
+                                                   "sel.first",
+                                                   "sel.last")
+                    self.active_text_frame.tag_config("subscript", 
+                                                      offset=offset)
+                else:
+                    return None
+            else:
+                return None
+        else:
+        # Changes only the following text.
+        # Changing all text is accomplished by highlighting all text.
+            self.custom_font = change(self.custom_font, new_font)
+            changed_font = self.custom_font.copy()
+            self.active_text_frame.tag_add(changed_font.name, 
+                                           "end-1c", 
+                                           "end")
+            self.active_text_frame.tag_config(changed_font.name, 
+                                              font=changed_font)
+            self.custom_fonts_dict[changed_font.name] = changed_font.copy()
+            self.active_text_frame.tag_lower(changed_font.name)
+            self.custom_fonts_dict["custom_font"] = self.custom_font.copy()
+            if offset is not None:
+                self.active_text_frame.tag_remove("superscript", 
+                                                  "end-1c", 
+                                                  "end")
+                self.active_text_frame.tag_remove("subscript", 
+                                                  "end-1c", 
+                                                  "end")
+                if offset == 20:
+                    self.active_text_frame.tag_add("superscript", 
+                                                   "end-1c", 
+                                                   "end")
+                    self.active_text_frame.tag_config("superscript", 
+                                                      offset=offset)
+                elif offset == -20:
+                    self.active_text_frame.tag_add("subscript", 
+                                                   "end-1c", 
+                                                   "end")
+                    self.active_text_frame.tag_config("subscript", 
+                                                      offset=offset)
                 else:
                     return None
             else:
@@ -4029,19 +4569,25 @@ class WN():
         old_tab = self.get_active_tab()
         if old_tab is None:
             old_tab = self.tab_set[min(self.tab_set.keys())]
-        self.previous_tab[3].config(relief="sunken")
-        self.active_text_frame = self.previous_tab[0]
-        new_tab = self.previous_tab
-        self.previous_tab = old_tab
-        for key, tab in self.tab_set.items():
-            if self.tab_set[key][0] is self.active_text_frame:
-                continue
-            else:
-                self.tab_set[key][3].config(relief="raised")
-        self._repack()
-        self.tabbed_text_entry_keybinds(new_tab)
-        new_tab[1].focus_force()
-        return None
+        try:
+            self.previous_tab[3].config(relief="sunken")
+            
+        except AttributeError as e:
+            self.previous_tab = None
+            return None
+        else:
+            self.active_text_frame = self.previous_tab[0]
+            new_tab = self.previous_tab
+            self.previous_tab = old_tab
+            for key, tab in self.tab_set.items():
+                if self.tab_set[key][0] is self.active_text_frame:
+                    continue
+                else:
+                    self.tab_set[key][3].config(relief="raised")
+            self._repack()
+            self.tabbed_text_entry_keybinds(new_tab)
+            new_tab[1].focus_force()
+            return None
 
 
     def get_active_tab(self, event=None):
@@ -4062,38 +4608,43 @@ class WN():
                 if event.widget in self.tab_set[key]:
                     tab_to_close = self.tab_set[key]
         self.select_previous_tab()
-        if self.previous_tab == tab_to_close:
-            invalid_previous_tab = True
-        if self._validate_tab(tab_to_close):
-            for widget in tab_to_close[:4]:
-                widget.pack_forget()
-                widget.destroy()
-            del self.tab_set[tab_to_close[12]]
-        else:
-            if tkmb.askyesno("Warning", 
-                             "If you continue, changes to the current file "
-                             "will be lost.  Would you like to save changes "
-                             "before continuing?", 
-                             icon="warning"):
-                self.save_file_tab(tab_to_close)
-            for widget in tab_to_close[:4]:
-                widget.pack_forget()
-                widget.destroy()
-            try:
-                del self.tab_set[tab_to_close[12]]
-            except KeyError:
-                pass
-        if invalid_previous_tab:
-            try:
-                self.previous_tab = self.tab_set[min(self.tab_set.keys())]
-            except ValueError: # empty set for min() call
-                pass
-        if self.tab_set == {}:
-            self.root.destroy()
+        if self.previous_tab is None:
             self.master.root.deiconify()
+            self.root.destroy()
             return None
         else:
-            return None    
+            if self.previous_tab == tab_to_close:
+                invalid_previous_tab = True
+            if self._validate_tab(tab_to_close):
+                for widget in tab_to_close[:4]:
+                    widget.pack_forget()
+                    widget.destroy()
+                del self.tab_set[tab_to_close[12]]
+            else:
+                if tkmb.askyesno("Warning", 
+                                 "If you continue, changes to the current "
+                                 "file will be lost.  Would you like to "
+                                 "save changes before continuing?", 
+                                 icon="warning"):
+                    self.save_file_tab(tab_to_close)
+                for widget in tab_to_close[:4]:
+                    widget.pack_forget()
+                    widget.destroy()
+                try:
+                    del self.tab_set[tab_to_close[12]]
+                except KeyError:
+                    pass
+            if invalid_previous_tab:
+                try:
+                    self.previous_tab = self.tab_set[min(self.tab_set.keys())]
+                except ValueError: # empty set for min() call
+                    pass
+            if self.tab_set == {}:
+                self.root.destroy()
+                self.master.root.deiconify()
+                return None
+            else:
+                return None    
 
 
     def close_other_tabs(self, event=None):
