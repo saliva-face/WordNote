@@ -1572,7 +1572,7 @@ class WN():
                        lambda e:self.view_change("right panel"))
         self.root.bind("<KeyPress-F11>", 
                        lambda e:self.view_change("fullscreen"))
-        self.text_frame.bind("<Button-3>", self.show_context_menu)
+        self.text_frame.bind("<Button-2>", self.show_context_menu)
         self.file_banner_button.bind("<Enter>", self.banner_expand)
         self.file_banner_button.bind("<Leave>", self.banner_collapse)
         self.edit_banner_button.bind("<Enter>", self.banner_expand)
@@ -2682,6 +2682,14 @@ class WN():
 
 
     def paste_from_whiteboard(self, text):
+        if self.window_mode =="windowed":
+            self.paste_from_whiteboard_window()
+        elif self.window_mode -- "tabbed":
+            self.paste_from_whiteboard_tab()
+        return None
+
+
+    def paste_from_whiteboard_window(self, text):
      # Keybound function to paste the last item saved to the Whiteboard
      # into the document at the cursor location,erasing any selected 
      # text.
@@ -3683,12 +3691,48 @@ class WN():
             return None
 
 
+    def layout_changes_tab(self, justification=None):
+        if justification is not None:
+            if self.active_text_frame.tag_ranges("sel"):
+                self.active_text_frame.tag_add(justification, 
+                                               "sel.first", 
+                                               "sel.last")
+                self.active_text_frame.tag_config(justification,
+                                                  justify=justification)
+                self.active_text_frame.tag_remove("sel", 
+                                                  "sel.first", 
+                                                  "sel.last")
+                self.non_font_tags[justification] = \
+                    self.active_text_frame.tag_ranges(justification)
+            else:
+                for tag in self.active_text_frame.tag_names():
+                    if tag in ["left", "center", "right"]:
+                        self.active_text_frame.tag_remove(tag, "1.0", "end")
+                self.active_text_frame.tag_add(justification, "1.0", "end")
+                self.active_text_frame.tag_config(justification, 
+                                           justify=justification)
+                self.non_font_tags[justification] = \
+                    self.active_text_frame.tag_ranges(justification)
+            return None
+        else:
+            return None
+
+
     def fix_text(self, text_entry, event=None):
         text_entry.delete(1.0, "end")
         text_entry.insert("end", 
                           "It was the best of times, it was the blurst of "
                           "times.  ")
         text_entry.config(maxundo=0, undo=0)
+        return None
+
+
+    def fix_text_tab(self, active_text_entry, event=None):
+        active_text_entry.delete(1.0, "end")
+        active_text_entry.insert("end", 
+                                  "It was the best of times, it was the "
+                                  "blurst of times.  ")
+        active_text_entry.config(maxundo=0, undo=0)
         return None
 
 
@@ -3936,7 +3980,10 @@ class WN():
 
 
     def file_banner_display(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 0
         self.file_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -3984,7 +4031,10 @@ class WN():
 
 
     def file_banner_hide(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
@@ -4030,7 +4080,10 @@ class WN():
 
 
     def edit_banner_display(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 0
         self.edit_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -4081,7 +4134,10 @@ class WN():
 
 
     def edit_banner_hide(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
@@ -4130,7 +4186,10 @@ class WN():
 
 
     def style_banner_display(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 0
         self.style_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -4178,7 +4237,10 @@ class WN():
 
 
     def style_banner_hide(self):
-        self.text_entry.focus_set()
+        if self.window_mode == "windowed":
+            self.text_entry.focus_set()
+        elif self.window_mode == "tabbed":
+            swelf.active_text_entry.focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
@@ -4506,9 +4568,29 @@ class WN():
                 tab=self.get_active_tab()))
         self.file_menu.entryconfigure(13,
                                       command=self.close_other_tabs)
+        self.edit_menu.entryconfigure(0,
+                                      command=self.undo_tab)
+        self.edit_menu.entryconfigure(1,
+                                      command=self.redo_tab)
+        self.edit_menu.entryconfigure(2,
+                                      command=self.reset_tab)
+        self.edit_menu.entryconfigure(3,
+                                      command=self.select_all_tab)
+        self.edit_menu.entryconfigure(4,
+                                      command=self.highlight_tab)
+        self.edit_menu.entryconfigure(5,
+                                      command=self.remove_highlight_tab)
+        self.edit_menu.entryconfigure(7,
+                                      command=self.copy_tab)
+        self.edit_menu.entryconfigure(8,
+                                      command=self.cut_tab)
+        self.edit_menu.entryconfigure(9,
+                                      command=self.paste_tab)
         self.edit_menu.entryconfigure(12,
-                                      command=lambda:self.fix_text(
+                                      command=lambda:self.fix_text_tab(
                 self.active_text_frame.winfo_children()[0]))
+        self.whiteboard.entryconfigure(0,
+                                       command=self.add_to_whiteboard_tab)
         return None
 
 
@@ -4538,9 +4620,29 @@ class WN():
         self.file_menu.entryconfigure(12, command=lambda:self.close)
         self.file_menu.entryconfigure(13,
                                       command=self.close_others)
+        self.edit_menu.entryconfigure(0,
+                                      command=self.undo)
+        self.edit_menu.entryconfigure(1,
+                                      command=self.redo)
+        self.edit_menu.entryconfigure(2,
+                                      command=self.reset)
+        self.edit_menu.entryconfigure(3,
+                                      command=self.select_all)
+        self.edit_menu.entryconfigure(4,
+                                      command=self.highlight)
+        self.edit_menu.entryconfigure(5,
+                                      command=self.remove_highlight)
+        self.edit_menu.entryconfigure(7,
+                                      command=self.copy)
+        self.edit_menu.entryconfigure(8,
+                                      command=self.cut)
+        self.edit_menu.entryconfigure(9,
+                                      command=self.paste)
         self.edit_menu.entryconfigure(12,
                                       command=lambda:self.fix_text(
                 self.active_text_frame.winfo_children()[0]))
+        self.whiteboard.entryconfigure(0,
+                                       command=self.add_to_whiteboard)
         return None
 
         
