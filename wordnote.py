@@ -1572,7 +1572,7 @@ class WN():
                        lambda e:self.view_change("right panel"))
         self.root.bind("<KeyPress-F11>", 
                        lambda e:self.view_change("fullscreen"))
-        self.text_frame.bind("<Button-2>", self.show_context_menu)
+        self.root.bind("<Button-3>", self.show_context_menu)
         self.file_banner_button.bind("<Enter>", self.banner_expand)
         self.file_banner_button.bind("<Leave>", self.banner_collapse)
         self.edit_banner_button.bind("<Enter>", self.banner_expand)
