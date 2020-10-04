@@ -1,4 +1,5 @@
 #usr/bin/env python3.4
+
 ## WordNote App                                                             ##
 ## Author: Joshua Andrews                                                   ##
 ## Distributed under GPL                                                    ##
@@ -11,6 +12,8 @@
 ##############################################################################
 ##                             VERSION  HISTORY                             ##
 ##############################################################################
+## 03/10/20 -:- Version 0.9.2 Finished -:- Adjusted tabbed mode menus, and  ##
+## corrected bugs.  Updated placeholder methods.                            ##
 ## 17/09/17 -:- Version 0.9.1 Finished -:- Tabbed mode menus completed.     ##
 ## 23/08/17 -:- Version 0.9.0 Finished -:- Can now switch between tabbed    ##
 ## and windowed modes.  Some menu items still need re-assigned to support   ##
@@ -677,21 +680,38 @@ class TextSearch():
                 # text has not changed, it resumes searching from where
                 # the last result was found.
                 if self.search_text == self.previous_search_text:
-                    previous_result = \
-                        self.WN_instance.text_entry.tag_ranges("sel")
+                    if self.WN_instance.window_mode == "windowed":
+                        previous_result = \
+                            self.WN_instance.text_entry.tag_ranges("sel")
+                    elif self.WN_instance.window_mode == "tabbed":
+                        previous_result = \
+                                self.WN_instance.get_active_tab()[1]\
+                                .tag_ranges("sel")
                     if previous_result == self.WN_instance.last_search_result:
-                        WN.search_text(self.WN_instance, 
-                                       self.search_text, 
-                                       previous_result[-1])
+                        if self.WN_instance.window_mode == "windowed":
+                            WN.search_text(self.WN_instance, 
+                                           self.search_text, 
+                                           previous_result[-1])
+                        elif self.WN_instance.window_mode == "tabbed":
+                            WN.search_text_tab(self.WN_instance,
+                                               self.search_text,
+                                               previous_result[-1])
                         return None
                     else:
                         self.previous_search_text = self.search_text
-                        WN.search_text(self.WN_instance, self.search_text)
+                        if self.WN_instance.window_mode == "windowed":
+                            WN.search_text(self.WN_instance, self.search_text)
+                        elif self.WN_instance.window_mode == "tabbed":
+                            WN.search_text_tab(self.WN_instance, 
+                                               self.search_text)
                         return None
             except AttributeError:
              # Raised if no previous search text has been saved.
                 self.previous_search_text = self.search_text
-                WN.search_text(self.WN_instance, self.search_text)
+                if self.WN_instance.window_mode == "windowed":
+                    WN.search_text(self.WN_instance, self.search_text)
+                elif self.WN_instance.window_mode == "tabbed":
+                    WN.search_text_tab(self.WN_instance, self.search_text)
                 return None
 
 
@@ -794,8 +814,13 @@ class TextReplace():
                 # text has not changed, it resumes searching from where
                 # the last result was found, and replaced.
                 if self.search_text == self.previous_search_text:
-                    previous_result = \
-                        self.WN_instance.text_entry.tag_ranges("sel")
+                    if self.WN_instance.window_mode == "windowed":
+                        previous_result = \
+                            self.WN_instance.text_entry.tag_ranges("sel")
+                    elif self.WN_instance.window_mode == "tabbed":
+                        previous_result = \
+                            self.WN_instance.get_active_tab()[1].tag_ranges\
+                                ("sel")
                     if previous_result == \
                             self.WN_instance.last_replacement_text:
                         WN.replace_text(self.WN_instance, 
@@ -803,20 +828,35 @@ class TextReplace():
                                         self.replacement_text, 
                                         previous_result[-1])
                     else:
-                        WN.replace_text(self.WN_instance, 
-                                        self.search_text, 
-                                        self.replacement_text)
+                        if self.WN_instance.window_mode == "windowed":
+                            WN.replace_text(self.WN_instance, 
+                                            self.search_text, 
+                                            self.replacement_text)
+                        elif self.WN_instance.window_mode == "tabbed":
+                            WN.replace_text_tab(self.WN_instance, 
+                                                self.search_text, 
+                                                self.replacement_text)
                 else:
-                    WN.replace_text(self.WN_instance,
-                                    self.search_text,
-                                    self.replacement_text)
+                    if self.WN_instance.window_mode == "windowed":
+                        WN.replace_text(self.WN_instance,
+                                        self.search_text,
+                                        self.replacement_text)
+                    elif self.WN_instance.window_mode == "tabbed":
+                        WN.replace_text_tab(self.WN_instance,
+                                            self.search_text,
+                                            self.replacement_text)
             except AttributeError:
              # Raised if no previous search text was saved.
                 self.previous_search_text = self.search_text
                 self.previous_replacement_text = self.replacement_text
-                WN.replace_text(self.WN_instance, 
-                                self.search_text, 
-                                self.replacement_text)
+                if self.WN_instance.window_mode == "windowed":
+                    WN.replace_text(self.WN_instance, 
+                                    self.search_text, 
+                                    self.replacement_text)
+                elif self.WN_instance.window_mode == "tabbed":
+                    WN.replace_text_tab(self.WN_instance, 
+                                        self.search_text, 
+                                        self.replacement_text)
             return None
 
 
@@ -2267,7 +2307,7 @@ class WN():
      # Prints the current text to the default printer.  Future updates 
      # will allow for a printing options dialogue.  Tab mode.
         default_printer = win32print.GetDefaultPrinter()
-        file_contents = bytes(self.active_text_frame.get(1.0, "end"), 
+        file_contents = bytes(self.get_active_tab()[1].get(1.0, "end"), 
                               "utf-8")
         self.printer = win32print.OpenPrinter(default_printer)
         print_job = win32print.StartDocPrinter(self.printer, 
@@ -2662,8 +2702,8 @@ class WN():
      # contain multiple items, each of which can be accessed separately
      # as and when required.  Checks whether a new item is already in 
      # the Whiteboard or not before addition.
-        if self.active_text_frame.tag_ranges("sel"):
-            new_wb_contents = str(self.active_text_frame.get("sel.first", 
+        if self.get_active_tab()[1].tag_ranges("sel"):
+            new_wb_contents = str(self.get_active_tab()[1].get("sel.first", 
                                                              "sel.last"))
             if new_wb_contents not in self.whiteboard_contents:
                 self.whiteboard_contents.append(new_wb_contents)
@@ -2708,14 +2748,14 @@ class WN():
      # Keybound function to paste the last item saved to the Whiteboard
      # into the document at the cursor location,erasing any selected 
      # text.
-        if self.active_text_frame.tag_ranges("sel"):
-            self.active_text_frame.delete("sel.first", "sel.last")
-            self.active_text_frame.insert("insert", text)
-            self.active_text_frame.delete("end-1c", "end")
+        if self.get_active_tab()[1].tag_ranges("sel"):
+            self.get_active_tab()[1].delete("sel.first", "sel.last")
+            self.get_active_tab()[1].insert("insert", text)
+            self.get_active_tab()[1].delete("end-1c", "end")
             return None
         else:
-            self.active_text_frame.insert("insert", text)
-            self.active_text_frame.delete("end-1c", "end")
+            self.get_active_tab()[1].insert("insert", text)
+            self.get_active_tab()[1].delete("end-1c", "end")
             return None
 
 
@@ -2897,10 +2937,10 @@ class WN():
     def select_all_tab(self, event=None):
      # Selects all text in the widget, highlighting it.
         if event:
-            self.active_text_frame.tag_add("sel", "1.0", "end-1c")
+            self.get_active_tab()[1].tag_add("sel", "1.0", "end-1c")
             return 'break'
         else:
-            self.active_text_frame.tag_add("sel", "1.0", "end-1c")
+            self.get_active_tab()[1].tag_add("sel", "1.0", "end-1c")
         return None
 
 
@@ -2937,19 +2977,21 @@ class WN():
             self.root.update()
         hl_colour = self.highlight_colour.get()
         try:
-            self.active_text_frame.tag_add(hl_colour, 
+            self.get_active_tab()[1].tag_add(hl_colour, 
                                            "sel.first", 
                                            "sel.last")
         except tk.TclError:
             raise TextNotSelectedError("Select text to highlight first.")
         else:
-            self.active_text_frame.tag_raise("sel")
-            self.active_text_frame.tag_remove("sel", "sel.first", "sel.last")
-            self.active_text_frame.tag_configure(hl_colour, 
+            self.get_active_tab()[1].tag_raise("sel")
+            self.get_active_tab()[1].tag_remove("sel", 
+                                                "sel.first", 
+                                                "sel.last")
+            self.get_active_tab()[1].tag_configure(hl_colour, 
                                                  background=hl_colour)
             self.root.update()
             self.non_font_tags[hl_colour] = \
-                self.active_text_frame.tag_ranges(hl_colour)
+                self.get_active_tab()[1].tag_ranges(hl_colour)
         finally:
             return None
         
@@ -2967,14 +3009,14 @@ class WN():
 
 
     def remove_highlight_tab(self):
-        for tag in self.active_text_frame.tag_names():
+        for tag in self.get_active_tab()[1].tag_names():
             if tag in ["yellow", "orange", "green", "pink"]:
-                if self.active_text_frame.tag_ranges("sel"):
-                    self.active_text_frame.tag_remove(tag, 
+                if self.get_active_tab()[1].tag_ranges("sel"):
+                    self.get_active_tab()[1].tag_remove(tag, 
                                                       "sel.first", 
                                                       "sel.last")
                 else:
-                    self.active_text_frame.tag_remove(tag, "1.0", "end")
+                    self.get_active_tab()[1].tag_remove(tag, "1.0", "end")
             else:
                 continue
         return None
@@ -3029,19 +3071,19 @@ class WN():
 
     def text_colour_change_tab(self, new_colour):
         self.text_colour = new_colour
-        if self.active_text_frame.tag_ranges("sel"):
-            self.active_text_frame.tag_add(self.text_colour,
+        if self.get_active_tab()[1].tag_ranges("sel"):
+            self.get_active_tab()[1].tag_add(self.text_colour,
                                            "sel.first",
                                            "sel.last")
-            self.active_text_frame.tag_raise(self.text_colour)
-            self.active_text_frame.tag_config(self.text_colour,
+            self.get_active_tab()[1].tag_raise(self.text_colour)
+            self.get_active_tab()[1].tag_config(self.text_colour,
                                               foreground=self.text_colour)
             self.text_colour_tags[self.text_colour] = \
-                self.active_text_frame.tag_ranges(self.text_colour)
+                self.get_active_tab()[1].tag_ranges(self.text_colour)
         else:
             for key in self.text_colour_tags:
-                self.active_text_frame.tag_remove(key, "1.0", "end")
-            self.active_text_frame.config(foreground=self.text_colour)
+                self.get_active_tab()[1].tag_remove(key, "1.0", "end")
+            self.get_active_tab()[1].config(foreground=self.text_colour)
             self.text_colour_tags = {}
         self.style_banner_canvas.itemconfig("text_colour",
                                             fill=self.text_colour)
@@ -3066,10 +3108,10 @@ class WN():
     def copy_tab(self, event=None):
      # Identical to Windows 'Copy' function - ensures identical function
      # cross-platform.
-        if self.active_text_frame.tag_ranges("sel"):
+        if self.get_active_tab()[1].tag_ranges("sel"):
             try:
                 self.root.clipboard_clear()
-                self.root.clipboard_append(self.active_text_frame.get\
+                self.root.clipboard_append(self.get_active_tab()[1].get\
                     ("sel.first", "sel.last"))
                 return "break"
             except tk.TclError:
@@ -3091,7 +3133,7 @@ class WN():
     def undo_tab(self, event=None):
      # Provides event handling for 'undo' option in menus.
         try:
-            self.active_text_frame.edit_undo()
+            self.get_active_tab()[1].edit_undo()
         except tk.TclError:
             return None
         else:
@@ -3111,7 +3153,7 @@ class WN():
     def redo_tab(self, event=None):
      # Provides event handling for 'redo' option in menus.
         try:
-            self.active_text_frame.edit_redo()
+            self.get_active_tab()[1].edit_redo()
         except tk.TclError:
             return None
         else:
@@ -3138,12 +3180,12 @@ class WN():
     def cut_tab(self, event=None):
      # Identical to Windows 'Cut' function - ensures identical function
      # cross-platform.
-        if self.active_text_frame.tag_ranges("sel"):
+        if self.get_active_tab()[1].tag_ranges("sel"):
             try:
                 self.root.clipboard_clear()
-                self.root.clipboard_append(self.active_text_frame.get\
+                self.root.clipboard_append(self.get_active_tab()[1].get\
                     ("sel.first", "sel.last"))
-                self.active_text_frame.delete("sel.first", "sel.last")
+                self.get_active_tab()[1].delete("sel.first", "sel.last")
             except tk.TclError:
                 return None
             else:
@@ -3176,17 +3218,17 @@ class WN():
      # Identical to Windows 'Paste' function - ensures identical function
      # cross-platform.
         try:
-            if self.active_text_frame.tag_ranges("sel"):
-                self.active_text_frame.delete("sel.first", "sel.last")
-                self.active_text_frame.insert("insert", 
+            if self.get_active_tab()[1].tag_ranges("sel"):
+                self.get_active_tab()[1].delete("sel.first", "sel.last")
+                self.get_active_tab()[1].insert("insert", 
                                               self.root.selection_get\
                                               (selection="CLIPBOARD"))
                 return "break"
             else:
-                self.active_text_frame.insert("insert", 
+                self.get_active_tab()[1].insert("insert", 
                                               self.root.selection_get\
                                               (selection="CLIPBOARD"))
-                self.active_text_frame.delete("end-1c", "end")
+                self.get_active_tab()[1].delete("end-1c", "end")
                 return "break"
         except tk.TclError:
             return None
@@ -3316,21 +3358,21 @@ class WN():
      # Searches for text from the text_search object, adding it to the 
      # "sel" tag and re-focusing on the main window.  "Find" dialogue 
      # remains open.
-        start = self.active_text_frame.search(search_text, 
-                                              search_index)
+        start = self.get_active_tab()[1].search(search_text, 
+                                                search_index)
         end = "".join([start, "+", str(len(search_text)), "c"])
-        self.active_text_frame.focus_force()
+        self.get_active_tab()[1].focus_force()
         try:
-            self.active_text_frame.see(start)
+            self.get_active_tab()[1].see(start)
         except tk.TclError:
             raise TextNotFoundError
             self.find_dialogue.root.destroy()
             self.find_dialogue = TextSearch(self)
             self.find_dialogue.search_field.insert("end", search_text)
         else:
-            self.active_text_frame.tag_remove("sel", 1.0, "end")
-            self.active_text_frame.tag_add("sel", start, end)
-            self.last_search_result = self.active_text_frame.tag_ranges\
+            self.get_active_tab()[1].tag_remove("sel", 1.0, "end")
+            self.get_active_tab()[1].tag_add("sel", start, end)
+            self.last_search_result = self.get_active_tab()[1].tag_ranges\
                 ("sel")
             return self.last_search_result
         finally:
@@ -3385,12 +3427,12 @@ class WN():
      # Searches for text, and replaces with text, from the TextReplace 
      # object, then re-focuses on the main window. "Find and Replace" 
      # dialogue remains open.
-        search_start = self.active_text_frame.search(search_text, 
-                                                     search_index)
+        search_start = self.get_active_tab()[1].search(search_text, 
+                                                       search_index)
         search_end = "".join([search_start, "+", str(len(search_text)), "c"])
-        self.active_text_frame.focus_force()
+        self.get_active_tab()[1].focus_force()
         try:
-            self.active_text_frame.see(search_start)
+            self.get_active_tab()[1].see(search_start)
         except tk.TclError:
             raise TextNotFoundError
             self.replace_dialogue.root.destroy()
@@ -3399,19 +3441,19 @@ class WN():
             self.replace_dialogue.replace_field.insert("end",
                                                        replacement_text)
         else:
-            if self.active_text_frame.tag_ranges("sel"):
-                self.active_text_frame.tag_remove("sel", 1.0, "end")
-            self.active_text_frame.delete(search_start, search_end)
-            self.active_text_frame.insert(search_start, replacement_text)
+            if self.get_active_tab()[1].tag_ranges("sel"):
+                self.get_active_tab()[1].tag_remove("sel", 1.0, "end")
+            self.get_active_tab()[1].delete(search_start, search_end)
+            self.get_active_tab()[1].insert(search_start, replacement_text)
             replace_start = search_start
             replace_end = "".join([replace_start,
                                    "+",
                                    str(len(replacement_text)),
                                    "c"])
-            self.active_text_frame.tag_add("sel", 
+            self.get_active_tab()[1].tag_add("sel", 
                                            replace_start, 
                                            replace_end)
-            self.last_search_result = self.active_text_frame.tag_ranges\
+            self.last_search_result = self.get_active_tab()[1].tag_ranges\
                     ("sel")
             self.last_replacement_text = replacement_text
             return self.last_replacement_text_result
@@ -3544,26 +3586,26 @@ class WN():
                     continue
             else:
                 return font
-        if self.active_text_frame.tag_ranges("sel"):
-            sel_length = len(self.active_text_frame.get("sel.first", 
+        if self.get_active_tab()[1].tag_ranges("sel"):
+            sel_length = len(self.get_active_tab()[1].get("sel.first", 
                                                         "sel.last"))
             for i in range(sel_length):
                 start_index = "sel.first+" + str(i) + "c"
                 stop_index = "sel.first+" + str(i+1) + "c"
-                for tag in self.active_text_frame.tag_names(start_index):
+                for tag in self.get_active_tab()[1].tag_names(start_index):
                     if tag not in self.non_font_tags and tag not in \
                             self.text_colour_tags:
                         font = self.custom_fonts_dict[tag].copy()
                         self.custom_fonts_dict[font.name] = font.copy()
-                        self.active_text_frame.tag_remove(tag,
+                        self.get_active_tab()[1].tag_remove(tag,
                                                           start_index,
                                                           stop_index)
-                        self.active_text_frame.tag_add(font.name,
+                        self.get_active_tab()[1].tag_add(font.name,
                                                        start_index,
                                                        stop_index)
-                        self.active_text_frame.tag_raise(font.name)
+                        self.get_active_tab()[1].tag_raise(font.name)
                         changed_font = change(font, new_font)
-                        self.active_text_frame.tag_config(font.name, 
+                        self.get_active_tab()[1].tag_config(font.name, 
                                                           font=changed_font)
                         self.custom_fonts_dict[font.name] = \
                                 changed_font.copy()
@@ -3573,33 +3615,33 @@ class WN():
                 else:
                     font = self.custom_fonts_dict["custom_font"].copy()
                     self.custom_fonts_dict[font.name] = font.copy()
-                    self.active_text_frame.tag_add(font.name,
-                                                   start_index,
-                                                   stop_index)
-                    self.active_text_frame.tag_raise(font.name)
+                    self.get_active_tab()[1].tag_add(font.name,
+                                                     start_index,
+                                                     stop_index)
+                    self.get_active_tab()[1].tag_raise(font.name)
                     changed_font = change(font, new_font)
-                    self.active_text_frame.tag_config(font.name,
-                                                      font=changed_font)
+                    self.get_active_tab()[1].tag_config(font.name,
+                                                        font=changed_font)
                     self.custom_fonts_dict[font.name] = changed_font.copy()
             if offset is not None:
-                self.active_text_frame.tag_remove("superscript",
-                                                  "sel.first",
-                                                  "sel.last")
-                self.active_text_frame.tag_remove("subscript",
-                                                  "sel.first",
-                                                  "sel.last")
+                self.get_active_tab()[1].tag_remove("superscript",
+                                                    "sel.first",
+                                                    "sel.last")
+                self.get_active_tab()[1].tag_remove("subscript",
+                                                    "sel.first",
+                                                    "sel.last")
                 if offset == 20:
-                    self.active_text_frame.tag_add("superscript",
-                                                   "sel.first",
-                                                   "sel.last")
-                    self.active_text_frame.tag_config("superscript", 
-                                                      offset=offset)
+                    self.get_active_tab()[1].tag_add("superscript",
+                                                     "sel.first",
+                                                     "sel.last")
+                    self.get_active_tab()[1].tag_config("superscript", 
+                                                        offset=offset)
                 elif offset == -20:
-                    self.active_text_frame.tag_add("subscript",
-                                                   "sel.first",
-                                                   "sel.last")
-                    self.active_text_frame.tag_config("subscript", 
-                                                      offset=offset)
+                    self.get_active_tab()[1].tag_add("subscript",
+                                                     "sel.first",
+                                                     "sel.last")
+                    self.get_active_tab()[1].tag_config("subscript", 
+                                                        offset=offset)
                 else:
                     return None
             else:
@@ -3609,33 +3651,33 @@ class WN():
         # Changing all text is accomplished by highlighting all text.
             self.custom_font = change(self.custom_font, new_font)
             changed_font = self.custom_font.copy()
-            self.active_text_frame.tag_add(changed_font.name, 
-                                           "end-1c", 
-                                           "end")
-            self.active_text_frame.tag_config(changed_font.name, 
-                                              font=changed_font)
+            self.get_active_tab()[1].tag_add(changed_font.name, 
+                                             "end-1c", 
+                                             "end")
+            self.get_active_tab()[1].tag_config(changed_font.name, 
+                                                font=changed_font)
             self.custom_fonts_dict[changed_font.name] = changed_font.copy()
-            self.active_text_frame.tag_lower(changed_font.name)
+            self.get_active_tab()[1].tag_lower(changed_font.name)
             self.custom_fonts_dict["custom_font"] = self.custom_font.copy()
             if offset is not None:
-                self.active_text_frame.tag_remove("superscript", 
-                                                  "end-1c", 
-                                                  "end")
-                self.active_text_frame.tag_remove("subscript", 
-                                                  "end-1c", 
-                                                  "end")
+                self.get_active_tab()[1].tag_remove("superscript", 
+                                                    "end-1c", 
+                                                    "end")
+                self.get_active_tab()[1].tag_remove("subscript", 
+                                                    "end-1c", 
+                                                    "end")
                 if offset == 20:
-                    self.active_text_frame.tag_add("superscript", 
-                                                   "end-1c", 
-                                                   "end")
-                    self.active_text_frame.tag_config("superscript", 
-                                                      offset=offset)
+                    self.get_active_tab()[1].tag_add("superscript", 
+                                                     "end-1c", 
+                                                     "end")
+                    self.get_active_tab()[1].tag_config("superscript", 
+                                                        offset=offset)
                 elif offset == -20:
-                    self.active_text_frame.tag_add("subscript", 
-                                                   "end-1c", 
-                                                   "end")
-                    self.active_text_frame.tag_config("subscript", 
-                                                      offset=offset)
+                    self.get_active_tab()[1].tag_add("subscript", 
+                                                     "end-1c", 
+                                                     "end")
+                    self.get_active_tab()[1].tag_config("subscript", 
+                                                        offset=offset)
                 else:
                     return None
             else:
@@ -3693,26 +3735,26 @@ class WN():
 
     def layout_changes_tab(self, justification=None):
         if justification is not None:
-            if self.active_text_frame.tag_ranges("sel"):
-                self.active_text_frame.tag_add(justification, 
-                                               "sel.first", 
-                                               "sel.last")
-                self.active_text_frame.tag_config(justification,
-                                                  justify=justification)
-                self.active_text_frame.tag_remove("sel", 
-                                                  "sel.first", 
-                                                  "sel.last")
+            if self.get_active_tab()[1].tag_ranges("sel"):
+                self.get_active_tab()[1].tag_add(justification, 
+                                                 "sel.first", 
+                                                 "sel.last")
+                self.get_active_tab()[1].tag_config(justification,
+                                                    justify=justification)
+                self.get_active_tab()[1].tag_remove("sel", 
+                                                    "sel.first", 
+                                                    "sel.last")
                 self.non_font_tags[justification] = \
-                    self.active_text_frame.tag_ranges(justification)
+                    self.get_active_tab()[1].tag_ranges(justification)
             else:
-                for tag in self.active_text_frame.tag_names():
+                for tag in self.get_active_tab()[1].tag_names():
                     if tag in ["left", "center", "right"]:
-                        self.active_text_frame.tag_remove(tag, "1.0", "end")
-                self.active_text_frame.tag_add(justification, "1.0", "end")
-                self.active_text_frame.tag_config(justification, 
+                        self.get_active_tab()[1].tag_remove(tag, "1.0", "end")
+                self.get_active_tab()[1].tag_add(justification, "1.0", "end")
+                self.get_active_tab()[1].tag_config(justification, 
                                            justify=justification)
                 self.non_font_tags[justification] = \
-                    self.active_text_frame.tag_ranges(justification)
+                    self.get_active_tab()[1].tag_ranges(justification)
             return None
         else:
             return None
@@ -3727,12 +3769,12 @@ class WN():
         return None
 
 
-    def fix_text_tab(self, active_text_entry, event=None):
-        active_text_entry.delete(1.0, "end")
-        active_text_entry.insert("end", 
+    def fix_text_tab(self, text_entry, event=None):
+        get_active_tab()[1].delete(1.0, "end")
+        get_active_tab()[1].insert("end", 
                                   "It was the best of times, it was the "
                                   "blurst of times.  ")
-        active_text_entry.config(maxundo=0, undo=0)
+        get_active_tab()[1].config(maxundo=0, undo=0)
         return None
 
 
@@ -3983,7 +4025,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 0
         self.file_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -4034,7 +4076,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
@@ -4083,7 +4125,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 0
         self.edit_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -4137,7 +4179,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
@@ -4189,7 +4231,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 0
         self.style_banner_canvas.pack(anchor="n",
                                      side="top",
@@ -4240,7 +4282,7 @@ class WN():
         if self.window_mode == "windowed":
             self.text_entry.focus_set()
         elif self.window_mode == "tabbed":
-            swelf.active_text_entry.focus_set()
+            swelf.get_active_tab()[1].focus_set()
         self.chev_angle = 180
         for n in range(18):
             self.chev_angle -= 10
